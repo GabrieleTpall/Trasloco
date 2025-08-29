@@ -1,0 +1,792 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+// ----------------------------------------------
+// TimelineTrasloco – Web App (mobile-first)
+// Aggiornamenti richiesti:
+// - Campo NOTE personali per ogni operazione
+// - Pulsante SALVA vicino a Carica PDF (salva progressi, documenti e note)
+// - Persistenza su localStorage (progressi, documenti, note)
+// - Tema colorato ma chiaro (pastello)
+// - Calendario mensile (settembre/ottobre 2025) con avanzamento mese
+// - Percorso/strada Montepulciano → Viterbo che avanza in base alle PRATICHE completate
+// - Tutto il resto invariato
+// ----------------------------------------------
+
+// Utils date
+const toDate = (s) => new Date(s + "T00:00:00");
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+// Periodo complessivo
+const GLOBAL_START = toDate("2025-09-04");
+const GLOBAL_END = toDate("2025-10-31");
+
+// Palette milestone
+const MS_COLORS = [
+  { bg: "bg-sky-200", dot: "bg-sky-500", text: "text-sky-900", ring: "ring-sky-300" },
+  { bg: "bg-teal-200", dot: "bg-teal-500", text: "text-teal-900", ring: "ring-teal-300" },
+  { bg: "bg-amber-200", dot: "bg-amber-500", text: "text-amber-900", ring: "ring-amber-300" },
+  { bg: "bg-fuchsia-200", dot: "bg-fuchsia-500", text: "text-fuchsia-900", ring: "ring-fuchsia-300" },
+  { bg: "bg-lime-200", dot: "bg-lime-500", text: "text-lime-900", ring: "ring-lime-300" },
+  { bg: "bg-rose-200", dot: "bg-rose-500", text: "text-rose-900", ring: "ring-rose-300" },
+];
+
+// --- DATI: Milestone + Operazioni con sotto-steps (details) ---
+const MILESTONES = [
+  {
+    id: "ms-0409-12",
+    colorIdx: 0,
+    label: "4–12 settembre",
+    title: "Avvio pratiche · Lavoretti casa di nonna · Pianificazione · Inventario",
+    start: toDate("2025-09-04"),
+    end: toDate("2025-09-12"),
+    tasks: [
+      {
+        id: "0409-12-01",
+        text:
+          "Sopralluogo tecnico in casa di nonna: misurazioni ambienti, verifica prese/illuminazione, infissi, rubinetti, scarichi, punti di umidità; definizione aree ‘stanza notte’, ‘deposito’, ‘attrezzi’.",
+        details: [
+          "Misura pareti principali (lunghezza/altezza) e annota eventuali fuori squadra.",
+          "Scatta 6–8 foto per ogni locale (prima/dopo).",
+          "Verifica differenziali elettrici e prova rubinetti/sifoni per perdite."
+        ],
+      },
+      {
+        id: "0409-12-02",
+        text:
+          "Piano verniciatura: scelta pittura (lavabile traspirante), colori, quantità; calendario lavori (stuccature/carteggiature → 1ª mano → 2ª mano → pulizie); aerazione e DPI (guanti/occhiali/mascherina leggera).",
+        details: [
+          "Calcola litri: ~1 L/8–10 m² per mano (stima 2 mani).",
+          "Proteggi prese/serramenti con nastro e teli; asciugatura tra le mani ≥ 6 h.",
+          "Smaltisci correttamente residui/attrezzi (secchi puliti, rulli lavati)."
+        ],
+      },
+      {
+        id: "0409-12-03",
+        text:
+          "Micro‑manutenzioni: sostituzione lampadine con LED, guarnizioni rubinetti se usurate, serraggi viti; controllo funzionalità prese e ciabatte.",
+        details: [
+          "Scegli LED 3000–4000K per stanze; verifica compatibilità attacchi E27/E14.",
+          "Kit guarnizioni universali per miscelatori; verifica perdite dopo 24 h.",
+          "Testa ciabatte con interruttore e protezione sovratensioni."
+        ],
+      },
+      {
+        id: "0409-12-04",
+        text:
+          "Predisposizione logistica: definizione spazio per frigo/letto/sedie; verifica passaggi scale/porte; scelta parete per letto e per eventuale tavolino.",
+        details: [
+          "Misura varchi (porta/scala): altezza/larghezza vs dimensioni colli.",
+          "Definisci layout stanza (presa elettrica dietro frigo, comodini).",
+          "Prepara feltrini e paracolpi per salvare pavimenti/pareti."
+        ],
+      },
+      {
+        id: "0409-12-05",
+        text:
+          "Pianificazione acquisti per casa nuova: definizione lista prioritaria (frigo, letto, sedie), elettrodomestici minori, illuminazione, tessili, cucina, bagno, organizzazione, sicurezza e prese; misure e passaggi verificati; preventivi/tempi; budget; sequenza acquisti (essenziali entro 30/9, resto entro 10/10).",
+        details: [
+          "Crea tabella con colonna Budget/Prezzo/Consegna/Ordine n°.",
+          "Verifica servizi: ritiro RAEE per frigo, montaggio letto su richiesta.",
+          "Pianifica finestre di consegna coordinate con tua presenza."
+        ],
+      },
+      {
+        id: "0409-12-06",
+        text:
+          "Inventario: classificazione per ‘Porto / Lascio / Smaltisco‑Vendo‑Regalo’; stima volumi (scatole medie/grandi); schema etichettatura (stanza → numero → contenuto).",
+        details: [
+          "Usa etichette colore per stanza; foto del contenuto prima di chiudere.",
+          "Peso max scatola ~15–18 kg; oggetti pesanti sempre in scatole piccole.",
+          "Crea elenco digitale (CSV) per ritrovare velocemente."
+        ],
+      },
+      {
+        id: "0409-12-07",
+        text:
+          "Preparazione documentale: cartella digitale ‘Trasloco 2025’ (PEC, contratti, foto contatori, verbale); bozze mail per gestori utenze e proprietaria; raccolta codici POD/PDR/cliente.",
+        details: [
+          "Struttura cartelle: /Affitto /Utenze /Lavoro /Residenza /Foto.",
+          "Rinomina file YYYY-MM-DD_nome-documento.pdf.",
+          "Annota in un file note i numeri pratica e i recapiti."
+        ],
+      },
+      {
+        id: "0409-12-08",
+        text:
+          "Smontaggi iniziali e primo alleggerimento: prime cose grandi; ombrellone terrazza; smaltimento sedie rotte; primo carico a Viterbo (garage) con sdraio/ombrelloni/cose estive + una bici; organizzazione garage e protezioni.",
+        details: [
+          "Controlla orari isola ecologica o prenota ritiro ingombranti.",
+          "Proteggi la bici (coperta/catena) e solleva da terra per umidità.",
+          "Traccia cosa hai portato già giù per evitare doppioni."
+        ],
+      },
+      {
+        id: "0409-12-09",
+        text:
+          "Conferma HR ASL Toscana su ferie e disdetta: entro il 16 settembre calcolo ferie residue; invio comunicazioni di disdetta ad ASL Toscana via PEC con presa d’atto; allineamento gestione ferie con responsabile.",
+        details: [
+          "Chiedi prospetto ferie firmato HR.",
+          "Nella PEC indica ultimo giorno 31/10 e recapiti personali.",
+          "Agenda condivisa ultimi turni + eventuali ferie."
+        ],
+      },
+    ],
+  },
+  {
+    id: "ms-entro-20",
+    colorIdx: 1,
+    label: "Entro il 20 settembre",
+    title: "Disdetta ASL Toscana · Turni e ferie · Ultimi giorni di lavoro",
+    start: toDate("2025-09-13"),
+    end: toDate("2025-09-20"),
+    tasks: [
+      {
+        id: "0920-01",
+        text: "Allineamento turni finali: meeting con Responsabile per coperture e reperibilità; aggiornamento planning.",
+        details: [
+          "Invia ordine del giorno con elenco scadenze.",
+          "Definisci chi prende in carico i fascicoli aperti.",
+        ],
+      },
+      {
+        id: "0920-02",
+        text: "Passaggio di consegne: elenco pratiche, scadenze, stato; nominativi referenti; condivisione cartelle/documenti.",
+        details: [
+          "Prepara una scheda per pratica (stato, prossimi passi).",
+          "Consegna credenziali/permessi secondo policy interna.",
+        ],
+      },
+      {
+        id: "0920-03",
+        text: "Restituzione dotazioni: badge, chiavi, DPI, eventuale telefono/PC; concorda data e modalità.",
+        details: [
+          "Redigi verbale di restituzione beni.",
+          "Esegui backup dati personali prima della consegna.",
+        ],
+      },
+      {
+        id: "0920-04",
+        text: "Contabilità personale: rimborsi missioni/indennità/straordinari; note spese da chiudere.",
+        details: [
+          "Scarica estratto presenze/trasferte e invialo a HR.",
+          "Conserva ricevute originali almeno 24 mesi.",
+        ],
+      },
+      {
+        id: "0920-05",
+        text: "Archivio personale: salvataggio attestati/certificazioni e materiali nel proprio spazio digitale.",
+        details: [
+          "Ordina per anno/tema; crea indice PDF.",
+          "Duplica su cloud secondario per ridondanza.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ms-entro-30",
+    colorIdx: 2,
+    label: "Entro il 30 settembre",
+    title: "Casa di nonna · Acquisti (frigo/letto/sedie) · Cambio residenza · Roma 2 (ufficialità)",
+    start: toDate("2025-09-21"),
+    end: toDate("2025-09-30"),
+    tasks: [
+      {
+        id: "0930-01",
+        text: "Presa in carico casa di nonna: armadio/scaffali; pulizia profonda; deposito provvisorio.",
+        details: [
+          "Ordina per zone: ingresso, stanza, cucina; elimina ridondanze.",
+          "Prodotti: sgrassatore, anticalcare, panni microfibra.",
+        ],
+      },
+      {
+        id: "0930-02",
+        text: "Acquisto frigo: misure varchi, scelta modello/efficienza, ritiro RAEE, messa in bolla.",
+        details: [
+          "Preferisci classe A/B e rumorosità < 40 dB.",
+          "Attendi 4–6 h prima di accendere (gas refrigerante).",
+        ],
+      },
+      {
+        id: "0930-03",
+        text: "Acquisto letto e materasso: misure compatibili, tempi consegna, attrezzi e protezioni.",
+        details: [
+          "Materasso medio‑rigido; coprimaterasso anallergico.",
+          "Stringi viti dopo 1 settimana di assestamento.",
+        ],
+      },
+      {
+        id: "0930-04",
+        text: "Acquisto sedie: pieghevoli/impilabili; feltrini antirumore.",
+        details: [
+          "Carico max sedia e stabilità su mattonelle.",
+          "Feltrini di ricambio in cassetto utility.",
+        ],
+      },
+      {
+        id: "0930-05",
+        text: "Programmazione consegne: finestra 30/9–10/10; presenza in casa; controllo integrità; resi immediati.",
+        details: [
+          "Fotografa eventuali danni al momento della consegna.",
+          "Conserva scontrini e numeri d’ordine.",
+        ],
+      },
+      {
+        id: "0930-06",
+        text: "Cambio residenza (ospite presso familiare): documenti, ANPR/sportello, ricevuta.",
+        details: [
+          "Prepara dichiarazione d’assenso firmata e documento nonna.",
+          "Nota quando attivare scelta MMG post‑inoltro.",
+        ],
+      },
+      {
+        id: "0930-07",
+        text: "Effetti sanitari: avvio scelta Medico di base (Lazio).",
+        details: [
+          "Tessera sanitaria + documento in corso di validità.",
+          "Verifica disponibilità medici nel quartiere.",
+        ],
+      },
+      {
+        id: "0930-08",
+        text: "Posta e recapiti: servizio Seguimi; elenco enti da aggiornare.",
+        details: [
+          "Scegli durata 3–6 mesi in base a necessità.",
+          "Inserisci PEC e banche tra i primi aggiornamenti.",
+        ],
+      },
+      {
+        id: "0930-09",
+        text: "Roma 2: conferma 3/11, sede/servizio/induzione; documenti da portare; contatti Ufficio del Personale.",
+        details: [
+          "IBAN, C.F., documento, eventuali certificazioni.",
+          "Chiedi info su badge, parcheggio, spogliatoi.",
+        ],
+      },
+      {
+        id: "0930-10",
+        text: "Pratica recesso modem Internet: restituzione router (punto consegna/corriere), ricevuta/tracking; chiusura amministrativa per evitare penali.",
+        details: [
+          "Disattiva Wi‑Fi guest e reset di fabbrica prima della resa.",
+          "Conserva ricevuta consegna o prova di spedizione.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ms-entro-04ott",
+    colorIdx: 3,
+    label: "Entro il 4 ottobre",
+    title: "Imballo e primo trasporto (cose grandi e meno usate)",
+    start: toDate("2025-10-01"),
+    end: toDate("2025-10-04"),
+    tasks: [
+      {
+        id: "1004-01",
+        text: "Cernita definitiva non essenziali; decisione su donazioni/smaltimenti.",
+        details: [
+          "Crea tre zone: Dono / Vendo / Isola ecologica.",
+          "Fotografa oggetti da vendere e pubblica annunci.",
+        ],
+      },
+      {
+        id: "1004-02",
+        text: "Imballo non‑essenziali: libri, archivi, stoviglie extra, attrezzature; protezione elettronica e angoli; etichettatura.",
+        details: [
+          "Libri: alterna costa/testa per stabilità.",
+          "Elettronica: sacchetti antistatici + pluriball.",
+        ],
+      },
+      {
+        id: "1004-03",
+        text: "Smontaggi leggeri: tavolino/sedie; viti in bustine etichettate.",
+        details: [
+          "Scatta foto dei punti di fissaggio prima di smontare.",
+          "Usa nastro carta per legare le tavole tra loro.",
+        ],
+      },
+      {
+        id: "1004-04",
+        text: "Primo trasporto: 1° viaggio verso Viterbo o spedizione; posizionamento per stanza; aggiornamento inventario.",
+        details: [
+          "Carico: pesante sotto/leggero sopra; fissaggi con cinghie.",
+          "Scarico: corridoi liberi, percorsi sicuri.",
+        ],
+      },
+      {
+        id: "1004-05",
+        text: "Controllo spazi Viterbo: sistemazione provvisoria; prese e luci; frigo se consegnato.",
+        details: [
+          "Verifica differenziale prese cucina.",
+          "Posiziona tappetini/antiscivolo sotto mobili leggeri.",
+        ],
+      },
+      {
+        id: "1004-06",
+        text: "Comunicazione proprietaria: aggiornamento stato e conferma finestra verbale.",
+        details: [
+          "Proponi 2–3 slot tra 20–26/10 per verbale.",
+          "Invia modello verbale per condivisione anticipata.",
+        ],
+      },
+      {
+        id: "1004-07",
+        text: "Meeting Responsabile ASL Toscana: pratiche residue; punto finale su ferie e ultimo giorno; consegne e restituzioni; presa d’atto.",
+        details: [
+          "Porta elenco pratiche con stato e destinatari.",
+          "Conferma per iscritto quanto concordato.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ms-entro-12ott",
+    colorIdx: 4,
+    label: "Entro il 12 ottobre",
+    title: "Casa mezza svuotata · Solo quotidianità · Ultime comunicazioni",
+    start: toDate("2025-10-05"),
+    end: toDate("2025-10-12"),
+    tasks: [
+      {
+        id: "1012-01",
+        text: "Utenze: richieste di cessazione/voltura con decorrenza 31/10; modalità autoletture e recapito fatture di chiusura.",
+        details: [
+          "Inserisci letture stimate e allega foto il 31/10.",
+          "Indica IBAN/indirizzo per conguagli finali.",
+        ],
+      },
+      {
+        id: "1012-02",
+        text: "Proprietaria: appuntamento verbale di riconsegna (20–26/10); scambio modelli di verbale.",
+        details: [
+          "Concorda presenza di entrambe le parti e orario luce.",
+          "Porta doppie chiavi e telecomandi eventuali.",
+        ],
+      },
+      {
+        id: "1012-03",
+        text: "Imballo essenziali residui: tieni solo quotidianità; predisponi ‘kit prima notte’.",
+        details: [
+          "Borsa documenti + farmaci + caricabatterie.",
+          "Kit cucina minima: 2 piatti, 2 bicchieri, 2 tazze, posate.",
+        ],
+      },
+      {
+        id: "1012-04",
+        text: "Pulizie intermedie e piccoli ritocchi.",
+        details: [
+          "Stucchi leggeri e pittura rapida su segni evidenti.",
+          "Sgrassa cucina e bagno per ridurre lavoro finale.",
+        ],
+      },
+      {
+        id: "1012-05",
+        text: "Backup e ordine documentale: duplica la cartella ‘Trasloco 2025’ su cloud.",
+        details: [
+          "Testa l’apertura dei PDF caricati (vedi sezione Documenti).",
+          "Conserva anche su chiavetta USB come ulteriore copia.",
+        ],
+      },
+    ],
+  },
+  {
+    id: "ms-31ott",
+    colorIdx: 5,
+    label: "31 ottobre",
+    title: "Consegna chiavi e chiusure tecniche/contabili",
+    start: toDate("2025-10-31"),
+    end: toDate("2025-10-31"),
+    tasks: [
+      {
+        id: "1031-01",
+        text: "Autoletture finali luce/gas/acqua con foto data/ora; invio ai gestori e richiesta fatture di chiusura.",
+        details: [
+          "Foto contatori ben leggibili; conserva email di invio.",
+          "Segna protocolli/ID pratica nelle note.",
+        ],
+      },
+      {
+        id: "1031-02",
+        text: "Documentazione fotografica ambienti vuoti dopo pulizia finale.",
+        details: [
+          "Scatta 2–3 foto per ambiente + dettagli su eventuali segni.",
+          "Carica un PDF riepilogo se vuoi (con link).",
+        ],
+      },
+      {
+        id: "1031-03",
+        text: "Verbale di riconsegna: stato locali, letture, tutte le chiavi; firma e scambio copie.",
+        details: [
+          "Porta due copie cartacee; firma su entrambe.",
+          "Allega elenco chiavi consegnate (numero/cilindro).",
+        ],
+      },
+      {
+        id: "1031-04",
+        text: "Chiusure economiche: saldo affitto/condominio/utenze/internet; quietanze.",
+        details: [
+          "Richiedi ricevuta o fattura quietanzata per ciascun pagamento.",
+          "Archivia tutte le prove di pagamento in PDF.",
+        ],
+      },
+      {
+        id: "1031-05",
+        text: "TARI: comunicazione cessazione occupazione a Montepulciano.",
+        details: [
+          "Compila modulo online o sportello; conserva protocollo.",
+          "Se già attiva TARI a Viterbo (nucleo nonna) verifica solo aggiornamento occupanti.",
+        ],
+      },
+      {
+        id: "1031-06",
+        text: "Archiviazione: salva PDF di verbale, foto, ricevute, corrispondenza; aggiorna registro spese trasloco.",
+        details: [
+          "Cartella /Chiusura con sottocartelle /Verbale /Utenze /Affitto.",
+          "Export registro spese in CSV (data, voce, importo).",
+        ],
+      },
+      {
+        id: "1031-07",
+        text: "Post‑trasloco a Viterbo: monta letto/sedie, collega frigo, sistema ‘kit prima notte’, piano di riordino per aree.",
+        details: [
+          "Ordine suggerito: letto → bagno → cucina → abiti → documenti.",
+          "Programma 2 sessioni di riordino nei 3 giorni successivi.",
+        ],
+      },
+    ],
+  },
+];
+
+// --- STORAGE ---
+const STORAGE_PROGRESS = "timeline-trasloco-progress-v3"; // progresso attività
+const STORAGE_DOCS = "timeline-trasloco-docs-v2"; // documenti per task { [taskId]: [{name,dataUrl,size,ts}] }
+const STORAGE_NOTES = "timeline-trasloco-notes-v1"; // note per task { [taskId]: string }
+
+const loadJSON = (k, def) => {
+  try { const raw = localStorage.getItem(k); return raw ? JSON.parse(raw) : def; } catch { return def; }
+};
+const saveJSON = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+// Hook oggi (aggiorna ogni ora)
+function useToday() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const id = setInterval(() => setNow(new Date()), 60 * 60 * 1000); return () => clearInterval(id); }, []);
+  return now;
+}
+
+// Calendario mensile (lun→dom)
+function MonthCalendar({ year, month, milestones, progress }) {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const startDay = (first.getDay() + 6) % 7; // 0=Mon … 6=Sun
+  const daysInMonth = last.getDate();
+
+  const msInMonth = milestones.filter((m) => !(m.end < first || m.start > last));
+  const monthTasks = msInMonth.flatMap((m) => m.tasks.map((t) => ({ id: t.id })));
+  const total = monthTasks.length || 1;
+  const done = monthTasks.filter((t) => progress[t.id]).length;
+  const pct = Math.round((done / total) * 100);
+
+  const weeks = [];
+  let day = 1 - startDay;
+  for (let w = 0; w < 6; w++) {
+    const row = [];
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(year, month, day);
+      const inMonth = day >= 1 && day <= daysInMonth;
+      const dots = milestones
+        .map((m, idx) => ({ m, idx }))
+        .filter(({ m }) => m.start <= date && m.end >= date && inMonth)
+        .slice(0, 4)
+        .map(({ idx }) => idx % MS_COLORS.length);
+      row.push({ date, inMonth, dots });
+      day++;
+    }
+    weeks.push(row);
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold">{first.toLocaleString("it-IT", { month: "long", year: "numeric" })}</h3>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200">Avanzamento mese: {pct}%</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-xs">
+        {["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map((d) => (
+          <div key={d} className="text-center font-medium text-slate-500 pb-1">{d}</div>
+        ))}
+        {weeks.map((row, i) => (
+          <React.Fragment key={i}>
+            {row.map((cell, j) => (
+              <div key={j} className={`h-16 rounded-xl border ${cell.inMonth ? "bg-slate-50 border-slate-200" : "bg-slate-100 border-slate-100 opacity-60"} p-2 relative`}>
+                <div className="text-[11px] font-semibold text-slate-600">{cell.date.getDate()}</div>
+                <div className="absolute bottom-1 left-2 right-2 flex gap-1">
+                  {cell.dots.map((cIdx, k) => (
+                    <span key={k} className={`h-1.5 flex-1 rounded-full ${MS_COLORS[cIdx].dot}`}></span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const today = useToday();
+  const [progress, setProgress] = useState(() => loadJSON(STORAGE_PROGRESS, {}));
+  const [docs, setDocs] = useState(() => loadJSON(STORAGE_DOCS, {}));
+  const [notes, setNotes] = useState(() => loadJSON(STORAGE_NOTES, {}));
+  const [expanded, setExpanded] = useState(() => Object.fromEntries(MILESTONES.map((m) => [m.id, true])));
+  const [monthIdx, setMonthIdx] = useState(0); // 0=Settembre, 1=Ottobre
+  const [savedTs, setSavedTs] = useState(null);
+
+  useEffect(() => saveJSON(STORAGE_PROGRESS, progress), [progress]);
+  useEffect(() => saveJSON(STORAGE_DOCS, docs), [docs]);
+  useEffect(() => saveJSON(STORAGE_NOTES, notes), [notes]);
+
+  // Progress globale (tempo)
+  const globalPct = useMemo(() => {
+    const total = GLOBAL_END - GLOBAL_START;
+    const elapsed = clamp(today - GLOBAL_START, 0, total);
+    return Math.round((elapsed / total) * 100);
+  }, [today]);
+
+  // Progress PRATICHE complessivo (per la strada)
+  const totalTasks = useMemo(() => MILESTONES.reduce((acc, m) => acc + m.tasks.length, 0), []);
+  const doneTasks = useMemo(() => MILESTONES.reduce((acc, m) => acc + m.tasks.filter((t) => progress[t.id]).length, 0), [progress]);
+  const practicesPct = Math.round((doneTasks / (totalTasks || 1)) * 100);
+
+  // Calcolo completamento per milestone
+  const msCompletion = (m) => {
+    const total = m.tasks.length;
+    const done = m.tasks.filter((t) => progress[t.id]).length;
+    return { done, total, pct: Math.round((done / total) * 100) };
+  };
+
+  const toggleTask = (id) => setProgress((p) => ({ ...p, [id]: !p[id] }));
+  const resetAll = () => { if (confirm("Azzero tutte le spunte?")) setProgress({}); };
+
+  // Documenti per task
+  const addDoc = (taskId, file) => {
+    if (!file) return;
+    if (file.type !== "application/pdf") { alert("Carica solo PDF"); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result; // base64 data URL
+      setDocs((prev) => {
+        const list = prev[taskId] ? [...prev[taskId]] : [];
+        list.push({ name: file.name, dataUrl, size: file.size, ts: Date.now() });
+        return { ...prev, [taskId]: list };
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  const removeDoc = (taskId, idx) => {
+    setDocs((prev) => {
+      const list = (prev[taskId] || []).slice();
+      list.splice(idx, 1);
+      return { ...prev, [taskId]: list };
+    });
+  };
+
+  const saveAll = () => {
+    saveJSON(STORAGE_PROGRESS, progress);
+    saveJSON(STORAGE_DOCS, docs);
+    saveJSON(STORAGE_NOTES, notes);
+    setSavedTs(Date.now());
+  };
+
+  const months = [ { y: 2025, m: 8 }, { y: 2025, m: 9 } ]; // JS months: 8=Set, 9=Ott
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-violet-50 text-slate-900">
+      {/* Header / Hero */}
+      <header className="sticky top-0 z-50 bg-gradient-to-r from-sky-500 to-violet-600 text-white shadow-sm">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-white/20">
+            <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="3"/>
+              <path d="M16 2v4M8 2v4M3 10h18"/>
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold leading-tight">TimelineTrasloco</h1>
+            <p className="text-sm text-white/90">Da Montepulciano a Viterbo: valigie, vernice e coraggio. Il trasloco di <span className="font-semibold">Gabriele</span> e <span className="font-semibold">Silvia</span>.</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={resetAll} className="text-xs px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20">Reset spunte</button>
+            {savedTs && (
+              <span className="text-[11px] bg-white/10 border border-white/20 rounded-lg px-2 py-1">Salvato alle {new Date(savedTs).toLocaleTimeString("it-IT")}</span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* Intro */}
+      <section className="max-w-4xl mx-auto px-4 pt-5 pb-2">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <h2 className="text-base font-semibold mb-1">Plancia di comando</h2>
+          <p className="text-sm text-slate-700">Gestisci pratiche, imballi e scadenze. Carica **PDF** per ogni operazione (PEC, verbali, ricevute) e aggiungi **note personali**. Le spunte e i documenti restano salvati sul dispositivo; premi <strong>Salva</strong> per forzare il salvataggio istantaneo.</p>
+        </div>
+      </section>
+
+      {/* Barra temporale globale + Calendario mensile + STRADA */}
+      <section className="max-w-4xl mx-auto px-4 py-2 grid md:grid-cols-2 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between text-xs text-slate-600 mb-2">
+            <span>4 set</span>
+            <span>16 set</span>
+            <span>20 set</span>
+            <span>30 set</span>
+            <span>4 ott</span>
+            <span>12 ott</span>
+            <span>31 ott</span>
+          </div>
+          <div className="relative h-3 bg-slate-100 rounded-full overflow-hidden">
+            <div className="absolute inset-y-0 left-0 bg-sky-500" style={{ width: `${globalPct}%` }} />
+            <div className="absolute -top-1 bottom-0 w-0.5 bg-violet-600" style={{ left: `${globalPct}%` }} title="Oggi" />
+          </div>
+          <p className="mt-2 text-xs text-slate-600">Tempo trascorso: {globalPct}% del periodo 4/09 → 31/10.</p>
+
+          {/* Percorso/Strada basato su pratiche completate */}
+          <div className="mt-4">
+            <div className="text-xs text-slate-700 mb-1">Percorso Montepulciano → Viterbo · Avanzamento pratiche: {practicesPct}%</div>
+            <div className="relative h-16 rounded-2xl overflow-hidden border border-slate-200 bg-neutral-800">
+              {/* linea tratteggiata centrale */}
+              <div className="absolute left-2 right-2 top-1/2 -translate-y-1/2 border-t-4 border-dashed border-yellow-300"></div>
+              {/* Start/End labels */}
+              <div className="absolute left-2 top-1 text-[10px] text-white/80">Montepulciano</div>
+              <div className="absolute right-2 top-1 text-[10px] text-white/80">Viterbo</div>
+              {/* Veicolo indicatore */}
+              <div
+                className="absolute -top-2 text-xl"
+                style={{ left: `calc(${practicesPct}% - 14px)`, top: "50%", transform: "translateY(-50%)" }}
+                title={`Avanzamento pratiche ${practicesPct}%`}
+              >🚚</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <button onClick={() => setMonthIdx((i) => Math.max(0, i - 1))} className="text-xs px-2 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50">◀</button>
+            <button onClick={() => setMonthIdx((i) => Math.min(1, i + 1))} className="text-xs px-2 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-50">▶</button>
+            <span className="text-xs text-slate-600">Mese: {new Date([2025,2025][monthIdx], [8,9][monthIdx], 1).toLocaleString("it-IT", { month: "long", year: "numeric" })}</span>
+          </div>
+          <MonthCalendar
+            year={[2025,2025][monthIdx]}
+            month={[8,9][monthIdx]}
+            milestones={MILESTONES}
+            progress={progress}
+          />
+        </div>
+      </section>
+
+      {/* Milestone cards */}
+      <main className="max-w-4xl mx-auto px-4 pb-28">
+        {MILESTONES.map((m, mIdx) => {
+          const { done, total, pct } = msCompletion(m);
+          const totalDays = Math.max(1, (m.end - m.start) / (1000 * 60 * 60 * 24) + 1);
+          const c = MS_COLORS[m.colorIdx % MS_COLORS.length];
+          return (
+            <section key={m.id} className="mb-4">
+              <div className={`rounded-2xl border shadow-sm p-4 ${c.bg} ${c.text} border-white/50`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold leading-tight">{m.label}</h3>
+                    <p className="text-sm opacity-90">{m.title}</p>
+                  </div>
+                  <button
+                    className={`text-xs px-2 py-1 rounded-lg bg-white/50 hover:bg-white/70 border ${c.ring}`}
+                    onClick={() => setExpanded((e) => ({ ...e, [m.id]: !e[m.id] }))}
+                  >{expanded[m.id] ? "Riduci" : "Espandi"}</button>
+                </div>
+
+                {/* Mini progress */}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs opacity-90 mb-1">
+                    <span>Operazioni completate</span>
+                    <span>
+                      {done}/{total} ({pct}%) · Durata {totalDays} gg
+                    </span>
+                  </div>
+                  <div className="h-2 bg-white/50 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+
+                {expanded[m.id] && (
+                  <ul className="mt-3 space-y-2">
+                    {m.tasks.map((t, idx) => (
+                      <li key={t.id} className="p-3 rounded-xl bg-white/70 border border-white/70 text-slate-800">
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            className="mt-1 w-4 h-4"
+                            checked={!!progress[t.id]}
+                            onChange={() => toggleTask(t.id)}
+                          />
+                          <div className="flex-1">
+                            <div className="text-xs font-semibold text-slate-500">{idx + 1}.</div>
+                            <p className="text-sm leading-relaxed font-medium">{t.text}</p>
+                            {t.details?.length > 0 && (
+                              <ul className="mt-2 text-sm list-disc pl-5 space-y-1 text-slate-700">
+                                {t.details.map((d, i) => (
+                                  <li key={i}>{d}</li>
+                                ))}
+                              </ul>
+                            )}
+
+                            {/* Documenti & Note per questa operazione */}
+                            <div className="mt-3">
+                              <div className="text-xs font-semibold text-slate-600 mb-1">Documenti & Note</div>
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                {(docs[t.id] || []).map((doc, i) => (
+                                  <div key={i} className="flex items-center gap-2 text-xs bg-slate-100 rounded-lg px-2 py-1 border border-slate-200">
+                                    <a href={doc.dataUrl} target="_blank" rel="noreferrer" className="underline hover:no-underline">{doc.name}</a>
+                                    <button className="px-1 py-0.5 border border-slate-300 rounded hover:bg-white" onClick={() => removeDoc(t.id, i)}>Rimuovi</button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex flex-col md:flex-row md:items-center gap-2">
+                                <label className="text-xs px-2 py-1 rounded-lg border border-slate-300 bg-white cursor-pointer hover:bg-slate-50 w-fit">
+                                  Carica PDF
+                                  <input type="file" accept="application/pdf" className="hidden" onChange={(e) => e.target.files?.[0] && addDoc(t.id, e.target.files[0])} />
+                                </label>
+                                <button onClick={saveAll} className="text-xs px-3 py-1 rounded-lg border border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 w-fit">Salva</button>
+                              </div>
+                              <div className="mt-2">
+                                <textarea
+                                  className="w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"
+                                  rows={3}
+                                  placeholder="Note personali… (numeri pratica, recapiti, promemoria)"
+                                  value={notes[t.id] || ""}
+                                  onChange={(e) => setNotes((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </main>
+
+      {/* Footer */}
+      <footer className="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 py-2 text-center text-xs text-slate-600">
+          TimelineTrasloco · Montepulciano → Viterbo · © {new Date().getFullYear()}
+        </div>
+      </footer>
+    </div>
+  );
+}
